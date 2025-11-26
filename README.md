@@ -1,144 +1,145 @@
-# EXPERIMENT 06: Implement a Simple LSTM using TensorFlow/Keras
+# EXPERIMENT 06: NAMED ENTITY RECOGNITION
+## NAME: KAVIPRIYA S.P
+## REG NO: 2305002011
 
-## **DL- Developing a Deep Learning Model for NER using LSTM**
-
-## **AIM**
-
+## AIM:
 To develop an LSTM-based model for recognizing the named entities in the text.
+##  PROBLEM STATEMENT AND DATASET:
+* We aim to develop an LSTM-based neural network model using Bidirectional Recurrent Neural Networks for recognizing the named entities in the text.
+* The dataset used has a number of sentences, and each words have their tags.
+* We have to vectorize these words using Embedding techniques to train our model.
+* Bidirectional Recurrent Neural Networks connect two hidden layers of opposite directions to the same output.
 
-## **THEORY**
+## DESIGN STEPS
+1. Import the necessary packages.
+2. Read the dataset and fill the null values using forward fill.
+3. Create a list of words and tags. Also find the number of unique words and tags in the dataset.
+4. Create a dictionary for the words and their Index values. Repeat the same for the tags as well.
+5. We done this by padding the sequences and also to acheive the same length of input data.
+6. We build the model using Input, Embedding, Bidirectional LSTM, Spatial Dropout, Time Distributed Dense Layers.
+7. We compile the model to fit the train sets and validation sets.
 
-**Neural Network Model**
-
-<img width="500" height="471" alt="image" src="https://github.com/user-attachments/assets/f1561c2b-7b24-4cc6-950b-53f4ed3b1977" />
-
-## **DESIGN STEPS**
-
-**STEP 1:** Data Preprocessing
-
-  - Load the dataset (ner_dataset.csv) using pandas.
-
-  - Fill missing values using forward fill (.ffill() method).
-
-  - Extract unique words and tags from the dataset and create mappings (word2idx, tag2idx).
-
-**STEP 2:** Sentence Grouping
-
-  - Combine words, their POS tags, and entity tags into complete sentences using groupby("Sentence #").
-
-  - Each sentence becomes a list of (word, POS, tag) tuples to preserve word-level tagging structure.
-
-**STEP 3:** Token Indexing and Padding
-
-  - Convert each word and tag into their corresponding integer indices using the mappings.
-
-  - Apply padding (using Keras pad_sequences) to make all sequences equal in length (e.g., max_len = 50).
-
-  - Split data into training and testing sets using train_test_split.
-
-**STEP 4:** Model Construction
-
-  - Define an Embedding layer to convert word indices into dense vectors.
-
-  - Apply SpatialDropout1D for regularization.
-
-  - Use a Bidirectional LSTM layer to capture contextual information from both directions.
-
-  - Add a TimeDistributed Dense layer with a softmax activation to predict entity tags at each word position.
-
-**STEP 5:** Model Compilation and Training
-
-  - Compile the model with Adam optimizer and sparse_categorical_crossentropy loss.
-
-  - Train the model for multiple epochs (e.g., 3) with the training data and validate using the test set.
-
-**STEP 6:** Evaluation and Prediction
-
-  - Plot training vs. validation accuracy and loss to monitor learning.
-
-  - Predict tags for a sample sentence from the test set.
-    
-  - Compare the true tags and predicted tags word by word to evaluate model performance.
-
-## **PROGRAM**
-
-
-**Name:** KAVIPRIYA SP
-
-**Register Number:** 2305002011
-
+## PROGRAM:
 ```python
-
-import matplotlib.pyplot as plt, pandas as pd, numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
 from tensorflow.keras.preprocessing import sequence
 from sklearn.model_selection import train_test_split
-from keras import layers, Model
+from keras import layers
+from keras.models import Model
 
-# Load + preprocess
-data = pd.read_csv("ner_dataset.csv", encoding="latin1").ffill()  # ✅ replaces deprecated fillna(method='ffill')
-print("Unique words:", data['Word'].nunique(), "| Unique tags:", data['Tag'].nunique())
+data = pd.read_csv("ner_dataset.csv", encoding="latin1")
+data.head(50)
+data = data.fillna(method="ffill")
+data.head()
 
-words, tags = list(data['Word'].unique()) + ["ENDPAD"], list(data['Tag'].unique())
-word2idx, tag2idx = {w:i+1 for i,w in enumerate(words)}, {t:i for i,t in enumerate(tags)}
+print("Unique words in corpus:", data['Word'].nunique())
+print("Unique tags in corpus:", data['Tag'].nunique())
+words=list(data['Word'].unique())
+words.append("ENDPAD")
+tags=list(data['Tag'].unique())
 
-# Group sentences safely
-sents = data.groupby("Sentence #", group_keys=False).apply(
-    lambda s:[(w,p,t) for w,p,t in zip(s.Word,s.POS,s.Tag)]
-).tolist()
+print("Unique tags are:", tags)
+num_words = len(words)
+num_tags = len(tags)
+num_words
 
-# Sequence preparation
-max_len = 50
-X = sequence.pad_sequences([[word2idx[w[0]] for w in s] for s in sents],
-                           maxlen=max_len,padding="post",value=len(words)-1)
-y = sequence.pad_sequences([[tag2idx[w[2]] for w in s] for s in sents],
-                           maxlen=max_len,padding="post",value=tag2idx["O"])
+class SentenceGetter(object):
+    def __init__(self, data):
+        self.n_sent = 1
+        self.data = data
+        self.empty = False
+        agg_func = lambda s: [(w, p, t) for w, p, t in zip(s["Word"].values.tolist(),
+                                                           s["POS"].values.tolist(),
+                                                           s["Tag"].values.tolist())]
+        self.grouped = self.data.groupby("Sentence #").apply(agg_func)
+        self.sentences = [s for s in self.grouped]
 
-# ✅ Convert labels to integer array
-X, y = np.array(X, dtype="int32"), np.array(y, dtype="int32")
+    def get_next(self):
+        try:
+            s = self.grouped["Sentence: {}".format(self.n_sent)]
+            self.n_sent += 1
+            return s
+        except:
+            return None
 
-Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=1)
+getter = SentenceGetter(data)
+sentences = getter.sentences
 
-# Model
-inp = layers.Input(shape=(max_len,))
-x = layers.Embedding(len(words), 50, input_length=max_len)(inp)
-x = layers.SpatialDropout1D(0.13)(x)
-x = layers.Bidirectional(layers.LSTM(250, return_sequences=True, recurrent_dropout=0.13))(x)
-out = layers.TimeDistributed(layers.Dense(len(tags), activation="softmax"))(x)
+len(sentences)
+sentences[0]
+word2idx = {w: i + 1 for i, w in enumerate(words)}
+tag2idx = {t: i for i, t in enumerate(tags)}
+word2idx
 
-model = Model(inp, out)
-model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
-model.fit(Xtr, ytr, validation_data=(Xte, yte), batch_size=45, epochs=3)
+plt.hist([len(s) for s in sentences], bins=50)
+plt.show()
+X1 = [[word2idx[w[0]] for w in s] for s in sentences]
+type(X1[0])
+X1[0]
+max_len=50
 
-# Metrics plot
-hist = pd.DataFrame(model.history.history)
-hist[['accuracy','val_accuracy']].plot(); hist[['loss','val_loss']].plot()
+X = sequence.pad_sequences(maxlen=max_len,
+                  sequences=X1, padding="post",
+                  value=num_words-1)
+X[0]
+y1 = [[tag2idx[w[2]] for w in s] for s in sentences]
+y = sequence.pad_sequences(maxlen=max_len,
+                  sequences=y1,
+                  padding="post",
+                  value=tag2idx["O"])
 
-# Sample prediction
+X_train, X_test, y_train, y_test = train_test_split(X, y,
+                                                    test_size=0.2, random_state=1)
+X_train[0]
+y_train[0]
+
+input_word = layers.Input(shape=(max_len,))
+embedding_layer = layers.Embedding(input_dim = num_words,
+                                   output_dim = 50,
+                                   input_length = max_len)(input_word)
+dropout_layer = layers.SpatialDropout1D(0.13)(embedding_layer)
+bidirectional_lstm = layers.Bidirectional(layers.LSTM(
+    units=250, return_sequences=True,recurrent_dropout=0.13))(dropout_layer)
+output = layers.TimeDistributed(
+    layers.Dense(num_tags, activation="softmax"))(bidirectional_lstm)
+
+model = Model(input_word, output)
+model.summary()
+model.compile(optimizer="adam",
+              loss="sparse_categorical_crossentropy",
+              metrics=["accuracy"])
+
+history = model.fit(
+    x=X_train,
+    y=y_train,
+    validation_data=(X_test,y_test),
+    batch_size=45,
+    epochs=3,)
+
+metrics = pd.DataFrame(model.history.history)
+metrics.head()
+metrics[['accuracy','val_accuracy']].plot()
+metrics[['loss','val_loss']].plot()
+
 i = 20
-p = np.argmax(model.predict(np.array([Xte[i]])), axis=-1)[0]
-print("{:15}{:5}\t{}".format("Word", "True", "Pred")); print("-"*30)
-for w,t,pd_ in zip(Xte[i], yte[i], p):
-    print("{:15}{}\t{}".format(words[w-1], tags[t], tags[pd_]))
+p = model.predict(np.array([X_test[i]]))
+p = np.argmax(p, axis=-1)
+y_true = y_test[i]
+print("{:15}{:5}\t {}\n".format("Word", "True", "Pred"))
+print("-" *30)
+for w, true, pred in zip(X_test[i], y_true, p[0]):
+    print("{:15}{}\t{}".format(words[w-1], tags[true], tags[pred]))
+```
 
+## OUTPUT:
+### TRAINING LOSS, VALIDATION LOSS VS ITERATION PLOT:
+<img width="704" height="489" alt="image" src="https://github.com/user-attachments/assets/4997bfb3-14b1-4563-8d46-8ab175ed3503" />
+<img width="649" height="466" alt="image" src="https://github.com/user-attachments/assets/16c4bcf0-f7c6-413b-aad6-179fcf1f45d3" />
 
-````
+### SAMPLE TEXT PREDICTION:
+<img width="280" height="696" alt="image" src="https://github.com/user-attachments/assets/49ee72cc-6b20-4187-aa05-442826443092" />
 
-
-
-
-## **OUTPUT**
-
-## TRAINING LOSS, VALIDATION LOSS VS ITERATION PLOT:
-
-<img width="565" height="418" alt="image" src="https://github.com/user-attachments/assets/aca3d86c-ed07-4aa7-a9f8-e1c3405c1d16" />
-
-<img width="556" height="413" alt="image" src="https://github.com/user-attachments/assets/22164c2d-981c-4a96-a6ed-eddb88682f22" />
-
-## SAMPLE TEXT PREDICTION:
-
-<img width="319" height="700" alt="image" src="https://github.com/user-attachments/assets/68785715-2788-4751-ab71-0523146b484d" />
-
-
-## **RESULT**
-
+## RESULT:
 Thus, an LSTM-based model for recognizing the named entities in the text is successfully developed.
